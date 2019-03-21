@@ -22,4 +22,4 @@ main = do
         Just (ServerConf port) -> do
             let conf = nullConf { port = port }
             putStrLn ("Listening on port " ++ (show port))
-            simpleHTTP conf $ ok ("Hello, world!" :: String) where
+            simpleHTTP conf $ ok ("Hello, world!" :: String)
