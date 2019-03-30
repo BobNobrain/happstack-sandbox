@@ -1,22 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
-import Happstack.Server (nullConf
-                        , simpleHTTP
-                        , toResponse
-                        , dir
-                        , path
-                        , ok
-                        , Conf (..)
-                        , ToMessage (..)
-                        , FromReqURI (..)
-                        , ServerPart
-                        )
+import Happstack.Server
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy.Char8 as LC
-import Control.Monad (mzero, msum)
+import Control.Monad (mzero, msum, MonadPlus)
+import Control.Monad.Trans (lift)
 import Control.Applicative ((<$>), (<*>))
 import Data.Aeson
 
@@ -35,24 +26,51 @@ instance ToJSON Account where
                         , "balance" .= (accountBalance acc)
                         ]
 
-instance (ToJSON a) => ToMessage a where
-    toMessage = encode
-    toContentType _ = "application/json; charset=utf-8"
-
 john :: Account
 john = Account { accountId = 2, accountBalance = 100 }
 
 oleg :: Account
 oleg = Account { accountId = 3, accountBalance = 15 }
 
-
-instance FromReqURI Account where
-    fromReqURI "2" = Just john
-    fromReqURI "3" = Just oleg
-    fromReqURI _ = Nothing
-
 accountIdentity200 :: Account -> ServerPart Account
 accountIdentity200 = ok
+
+
+data ApiResponse a
+    = ApiResponseError String
+    | ApiResponseResult a
+    deriving (Show, Eq)
+
+
+instance (ToJSON a) => ToJSON (ApiResponse a) where
+    toJSON (ApiResponseError errmsg) = object [ "success" .= False, "error" .= object [ "message" .= errmsg ] ]
+    toJSON (ApiResponseResult value) = object [ "success" .= True, "data" .= (toJSON value) ]
+
+instance (ToJSON a) => ToMessage (ApiResponse a) where
+    toMessage = encode
+    toContentType _ = "application/json; charset=utf-8"
+
+
+testRqHandler :: ServerPartT IO (ApiResponse Account)
+testRqHandler = do
+    -- guard route
+    dir "user" $ anyPath nullDir
+    noTrailingSlash
+    rq <- askRq
+    putStrLn' $ show $ rqPaths rq
+    userId <- dir "user" $ path (\(i :: Int) -> return i)
+    -- nullDir
+    -- putStrLn' "Let's check for nullDir..."
+    -- nullDir
+    -- putStrLn' "yup"
+    case userId of 2 -> ok $ ApiResponseResult john
+                   3 -> ok $ ApiResponseResult oleg
+                   _ -> notFound $ ApiResponseError "No such user"
+    where
+        putStrLn' :: String -> ServerPartT IO ()
+        putStrLn' = (lift . putStrLn)
+
+        waste _ = return ()
 
 
 main :: IO ()
@@ -65,8 +83,6 @@ main = do
         Just (ServerConf port) -> do
             let conf = nullConf { port = port }
             putStrLn ("Listening on port " ++ (show port))
-            simpleHTTP conf $ msum  [ dir "user" $ path accountIdentity200
-                                    , dir "oleg" $ ok john
-                                    , dir "john" $ ok john
+            simpleHTTP conf $ msum  [ testRqHandler
                                     ]
 
