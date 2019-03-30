@@ -17,6 +17,7 @@ data RouteParser a = RouteParser { execParser :: (Route -> Maybe (a, Route)) }
 runRouteParser :: RouteParser a -> Route -> Maybe a
 runRouteParser p route = ((execParser p) route) >>= Just . fst
 
+-- https://wiki.haskell.org/Functor-Applicative-Monad_Proposal
 instance Functor RouteParser where
     fmap = liftM
 
@@ -25,7 +26,6 @@ instance Applicative RouteParser where
     (<*>) = ap
 
 instance Monad RouteParser where
-    return = pure
     (>>=) = bindRouteParser
     fail _ = RouteParser (\_ -> Nothing)
 
